@@ -6,6 +6,7 @@ from src.config.settings import check_required_envs
 from src.core.monday.fetch_monday_ids import fetch_monday_ids_df
 from src.core.rig.auth import get_rig_token, build_rig_session
 from src.core.rig.fetch_rigs import fetch_rigs
+from src.utils.fetch_current_date import print_date_range_from_start
 
 
 def main() -> int:
@@ -32,7 +33,11 @@ def main() -> int:
     print(df_rigs_ids)
     print(f"{len(df_rigs_ids)} rows × {df_rigs_ids.shape[1]} columns")
 
-
+    # 5) Definindo datas para Query Params
+    print("\n5️⃣ Definindo data atual...")
+    START_DATE, END_DATE = print_date_range_from_start()
+    print("START_DATE:", START_DATE)
+    print("END_DATE:", END_DATE)
 
     print("\n🏁 Pipeline Rig concluído.\n")
     return 0
