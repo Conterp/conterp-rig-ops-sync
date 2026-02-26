@@ -34,12 +34,13 @@ query ($board_id: ID!, $limit: Int!, $cursor: String) {
 
 
 def monday_post(
+    session: requests.Session,
     query: str,
     variables: dict,
     token: str,
     retries: int,
-    base: float,
-    cap: float,
+    backoff_base: float,
+    backoff_cap: float,
     timeout_s: int,
 ) -> dict:
     headers = {"Authorization": token, "Content-Type": "application/json"}
@@ -47,37 +48,42 @@ def monday_post(
 
     for attempt in range(retries + 1):
         try:
-            response = requests.post(
+            response = session.post(
                 MONDAY_BASE_URL,
                 json=payload,
                 headers=headers,
                 timeout=timeout_s,
             )
 
+            # Rate limit
             if response.status_code == 429:
                 wait = float(
-                    response.headers.get("Retry-After", min(cap, base * (2 ** attempt)))
+                    response.headers.get(
+                        "Retry-After",
+                        min(backoff_cap, backoff_base * (2 ** attempt)),
+                    )
                 )
                 time.sleep(wait + random.random() * 0.25)
                 continue
 
+            # Erros transitórios
             if response.status_code >= 500:
-                wait = min(cap, base * (2 ** attempt))
+                wait = min(backoff_cap, backoff_base * (2 ** attempt))
                 time.sleep(wait + random.random() * 0.25)
                 continue
 
             response.raise_for_status()
 
-            data = response.json()
-            if data.get("errors"):
-                raise RuntimeError(data["errors"])
+            response_payload = response.json()
+            if response_payload.get("errors"):
+                raise RuntimeError(response_payload["errors"])
 
-            return data
+            return response_payload
 
         except (requests.Timeout, requests.ConnectionError):
             if attempt == retries:
                 raise
-            wait = min(cap, base * (2 ** attempt))
+            wait = min(backoff_cap, backoff_base * (2 ** attempt))
             time.sleep(wait + random.random() * 0.25)
 
 
@@ -91,50 +97,61 @@ def fetch_existing_ids(limit: int = 500) -> set[str]:
     if not MONDAY_BOARD_ID:
         raise RuntimeError("MONDAY_BOARD_ID não definido no .env")
 
-    count_data = monday_post(
-        QUERY_COUNT,
-        {"board_id": str(MONDAY_BOARD_ID)},
-        MONDAY_API_TOKEN,
-        retries=MONDAY_MAX_RETRIES,
-        base=MONDAY_BACKOFF_BASE,
-        cap=MONDAY_BACKOFF_CAP,
-        timeout_s=MONDAY_TIMEOUT_S,
-    )
+    existing_ids: set[str] = set()
 
-    total_items = count_data["data"]["boards"][0]["items_count"]
-    total_pages = math.ceil(total_items / limit) if total_items else 0
+    with requests.Session() as session:
+        # Total pra barra em %
+        count_payload = monday_post(
+            session=session,
+            query=QUERY_COUNT,
+            variables={"board_id": str(MONDAY_BOARD_ID)},
+            token=MONDAY_API_TOKEN,
+            retries=MONDAY_MAX_RETRIES,
+            backoff_base=MONDAY_BACKOFF_BASE,
+            backoff_cap=MONDAY_BACKOFF_CAP,
+            timeout_s=MONDAY_TIMEOUT_S,
+        )
 
-    cursor = None
-    ids: set[str] = set()
+        try:
+            total_items = count_payload["data"]["boards"][0]["items_count"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError(f"Resposta inesperada do Monday (items_count): {count_payload}") from exc
 
-    with tqdm(total=total_pages, desc="Lendo Monday", unit="page") as pbar:
-        while True:
-            data = monday_post(
-                QUERY_ITEMS,
-                {"board_id": str(MONDAY_BOARD_ID), "limit": int(limit), "cursor": cursor},
-                MONDAY_API_TOKEN,
-                retries=MONDAY_MAX_RETRIES,
-                base=MONDAY_BACKOFF_BASE,
-                cap=MONDAY_BACKOFF_CAP,
-                timeout_s=MONDAY_TIMEOUT_S,
-            )
+        total_pages = math.ceil(total_items / limit) if total_items else 0
 
-            page = data["data"]["boards"][0]["items_page"]
-            items = page.get("items", [])
+        cursor = None
+        with tqdm(total=total_pages, desc="Lendo Monday", unit="page") as pbar:
+            while True:
+                page_payload = monday_post(
+                    session=session,
+                    query=QUERY_ITEMS,
+                    variables={"board_id": str(MONDAY_BOARD_ID), "limit": int(limit), "cursor": cursor},
+                    token=MONDAY_API_TOKEN,
+                    retries=MONDAY_MAX_RETRIES,
+                    backoff_base=MONDAY_BACKOFF_BASE,
+                    backoff_cap=MONDAY_BACKOFF_CAP,
+                    timeout_s=MONDAY_TIMEOUT_S,
+                )
 
-            for item in items:
-                item_name = item.get("name")
-                if item_name:
-                    ids.add(item_name)
+                try:
+                    items_page = page_payload["data"]["boards"][0]["items_page"]
+                except (KeyError, IndexError, TypeError) as exc:
+                    raise RuntimeError(f"Resposta inesperada do Monday (items_page): {page_payload}") from exc
 
-            pbar.update(1)
-            pbar.set_postfix(itens=len(ids), total=total_items)
+                items = items_page.get("items", [])
+                for item in items:
+                    item_name = item.get("name")
+                    if item_name:
+                        existing_ids.add(item_name)
 
-            cursor = page.get("cursor")
-            if not cursor:
-                break
+                pbar.update(1)
+                pbar.set_postfix(itens=len(existing_ids), total=total_items)
 
-    return ids
+                cursor = items_page.get("cursor")
+                if not cursor:
+                    break
+
+    return existing_ids
 
 
 def fetch_monday_ids_df(limit: int = 500) -> pd.DataFrame:
@@ -142,8 +159,8 @@ def fetch_monday_ids_df(limit: int = 500) -> pd.DataFrame:
     Retorna um DataFrame com 1 coluna: 'Monday ID'
     (a partir dos item.name do Monday).
     """
-    ids = fetch_existing_ids(limit=limit)
-    return pd.DataFrame({"Monday ID": list(ids)})
+    existing_ids = fetch_existing_ids(limit=limit)
+    return pd.DataFrame({"Monday ID": list(existing_ids)})
 
 
 if __name__ == "__main__":
