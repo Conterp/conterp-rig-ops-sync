@@ -3,13 +3,14 @@ from __future__ import annotations
 import sys
 
 from src.config.settings import check_required_envs
-from src.core.monday.fetch_monday_ids import fetch_monday_ids_df
+from src.core.monday.fetch_monday_ids import fetch_monday_ids
 from src.core.rig.auth import get_rig_token, build_rig_session
 from src.core.rig.fetch_rigs import fetch_rigs, rigs_to_records
 from src.utils.fetch_current_date import print_date_range_from_start
 from src.core.rig.fetch_reference_ids import fetch_reference_ids
 from src.utils.find_new_reference_ids import find_new_reference_ids
-
+from src.utils.build_rig_date_ranges import build_rig_date_ranges
+from src.core.rig.fetch_enrich_by_ranges import fetch_enrich_by_ranges
 
 def main() -> int:
     print("\n🚀 Iniciando RIG PIPELINE...\n")
@@ -20,7 +21,7 @@ def main() -> int:
 
     # 2) Busca todos ID's que já existem no monday
     print("\n2️⃣ Lendo todos ID's que existem no Monday...")
-    df_monday_ids = fetch_monday_ids_df(limit=500)
+    df_monday_ids = fetch_monday_ids(limit=500)
     print(df_monday_ids)
 
     # 3) Autenticação no RigMgt
@@ -61,8 +62,32 @@ def main() -> int:
         df_monday_ids_existing=df_monday_ids,
         df_base=df_base,
     )
-
     print(df_new_ids)
+
+    # 8) Criando ranges de datas para enriquecimento
+    print("\n8️⃣ Criando ranges de datas...")
+    df_ranges = build_rig_date_ranges(df_new_ids)
+
+    print(df_ranges)
+    print(f"Qtd ranges: {len(df_ranges)}")
+    print(f"Total dias: {int(df_ranges['days'].sum())}")
+
+    # 9) Enriquecendo dados por range
+    print("\n9️⃣ Enriquecendo dados por range...")
+    (
+        df_rig_operational_daily,
+        df_rig_operational_daily_valid,
+        df_rig_operational_daily_errors,
+    ) = fetch_enrich_by_ranges (
+        session=rig_session,
+        df_ranges=df_ranges,
+        show_progress=True,
+    )
+
+    print(df_rig_operational_daily_valid)
+    print(f"Linhas válidas: {len(df_rig_operational_daily_valid)}")
+    print(f"Ranges com erro/vazio: {len(df_rig_operational_daily_errors)}")
+
 
 
     print("\n🏁 Pipeline Rig concluído.\n")

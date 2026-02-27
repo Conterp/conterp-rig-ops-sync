@@ -120,7 +120,7 @@ def fetch_existing_ids(limit: int = 500) -> set[str]:
         total_pages = math.ceil(total_items / limit) if total_items else 0
 
         cursor = None
-        with tqdm(total=total_pages, desc="Lendo Monday", unit="page") as pbar:
+        with tqdm(total=total_pages, desc="Ⓜ️ Lendo Monday", unit="page") as pbar:
             while True:
                 page_payload = monday_post(
                     session=session,
@@ -154,7 +154,7 @@ def fetch_existing_ids(limit: int = 500) -> set[str]:
     return existing_ids
 
 
-def fetch_monday_ids_df(limit: int = 500) -> pd.DataFrame:
+def fetch_monday_ids(limit: int = 500) -> pd.DataFrame:
     """
     Retorna um DataFrame com 1 coluna: 'Monday ID'
     (a partir dos item.name do Monday).
@@ -164,6 +164,5 @@ def fetch_monday_ids_df(limit: int = 500) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    df_monday_ids_existing = fetch_monday_ids_df(limit=500)
+    df_monday_ids_existing = fetch_monday_ids(limit=500)
     print(df_monday_ids_existing)
-    print(f"{len(df_monday_ids_existing)} rows × {df_monday_ids_existing.shape[1]} columns")
