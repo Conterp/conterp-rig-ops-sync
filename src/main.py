@@ -8,6 +8,7 @@ from src.core.rig.auth import get_rig_token, build_rig_session
 from src.core.rig.fetch_rigs import fetch_rigs, rigs_to_records
 from src.utils.fetch_current_date import print_date_range_from_start
 from src.core.rig.fetch_reference_ids import fetch_reference_ids
+from src.utils.find_new_reference_ids import find_new_reference_ids
 
 
 def main() -> int:
@@ -53,6 +54,16 @@ def main() -> int:
     )
     print(df_rig_reference_id)
     print(df_base)
+
+    # 7) Descobrindo novos reference_ids
+    print("\n7️⃣ Descobrindo novos reference_ids...")
+    df_new_ids = find_new_reference_ids(
+        df_monday_ids_existing=df_monday_ids,
+        df_base=df_base,
+    )
+
+    print(df_new_ids)
+
 
     print("\n🏁 Pipeline Rig concluído.\n")
     return 0
