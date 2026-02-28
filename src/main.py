@@ -14,6 +14,12 @@ from src.utils.build_rig_date_ranges import build_rig_date_ranges
 from src.core.rig.fetch_enrich_by_ranges import fetch_enrich_by_ranges
 from src.core.monday.build_monday_payloads import build_monday_payloads
 from src.core.monday.create_monday_items import create_monday_items
+from src.core.monday.fetch_monday_all_items import fetch_monday_all_items
+from src.core.monday.find_duplicate_items import (
+    find_monday_duplicates,
+    build_duplicate_resolution,
+)
+from src.core.monday.delete_monday_items import delete_monday_items
 
 def main() -> int:
     print("---------------------------------")
@@ -119,6 +125,45 @@ def main() -> int:
     print(f"❌ Falhas: {len(failed_creations)}")
     if failed_creations:
         print("Exemplo de falha:", failed_creations[0])
+
+
+    # 12) Recarregando itens do Monday
+    print("\n")
+    print("\n1️⃣2️⃣ Recarregando todos os itens do Monday...")
+    df_monday_all_items = fetch_monday_all_items(limit=500)
+    print(df_monday_all_items)
+
+
+    # 13) Encontrando Duplicados
+    print("\n")
+    print("\n1️⃣3️⃣ Encontrando Duplicados...")
+    df_monday_duplicates, df_duplicate_summary = find_monday_duplicates(df_monday_all_items)
+
+    df_duplicate_resolution, item_ids_to_delete = build_duplicate_resolution(
+        df_monday_duplicates=df_monday_duplicates,
+        df_duplicate_summary=df_duplicate_summary,
+    )
+
+    print(f"\n {df_duplicate_summary}")
+    print(f"\n {df_duplicate_resolution}")
+    print("Itens a deletar:", len(item_ids_to_delete))
+    print("Exemplo ids a deletar:", item_ids_to_delete[:10])
+
+
+    # 14) Deletando duplicados no Monday
+    print("\n")
+    print("\n1️⃣4️⃣ Deletando duplicados no Monday...")
+    successful_deletions, failed_deletions = delete_monday_items(
+        item_ids_to_delete=item_ids_to_delete,
+        progress_description="🗑️ Deletando duplicados",
+        dry_run=False,  # coloque True se quiser simular
+    )
+
+    print(f"✅ Deletados: {len(successful_deletions)}")
+    print(f"❌ Falhas: {len(failed_deletions)}")
+    if failed_deletions:
+        print("Exemplo de falha:", failed_deletions[0])
+
 
     print("\n🏁 Pipeline Rig concluído.\n")
     return 0
