@@ -13,6 +13,7 @@ from src.utils.find_new_reference_ids import find_new_reference_ids
 from src.utils.build_rig_date_ranges import build_rig_date_ranges
 from src.core.rig.fetch_enrich_by_ranges import fetch_enrich_by_ranges
 from src.core.monday.build_monday_payloads import build_monday_payloads
+from src.core.monday.create_monday_items import create_monday_items
 
 def main() -> int:
     print("---------------------------------")
@@ -108,6 +109,16 @@ def main() -> int:
     print(f"Total para subir: {len(monday_payloads)}")
     if monday_payloads:
         print(json.dumps(monday_payloads[0], indent=2))
+        
+    # 11) Subindo itens no Monday
+    print("\n")
+    print("\n1️⃣1️⃣ Subindo itens no Monday...")
+    successful_creations, failed_creations = create_monday_items(monday_payloads)
+
+    print(f"✅ Sucessos: {len(successful_creations)}")
+    print(f"❌ Falhas: {len(failed_creations)}")
+    if failed_creations:
+        print("Exemplo de falha:", failed_creations[0])
 
     print("\n🏁 Pipeline Rig concluído.\n")
     return 0

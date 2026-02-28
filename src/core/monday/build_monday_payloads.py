@@ -1,5 +1,5 @@
 import pandas as pd
-
+import json
 from src.config.settings import MONDAY_COLS_JSON
 
 
@@ -119,5 +119,5 @@ if __name__ == "__main__":
     )
 
     payloads = build_monday_payloads(df_example)
-    print(payloads)
+    print(json.dumps(payloads, indent=2))
     print(f"Total para subir: {len(payloads)}")
