@@ -6,5 +6,3 @@ services:
     container_name: rig-monday-sync
     env_file: .env
     restart: "no"
-    volumes:
-      - ./logs:/app/logs
