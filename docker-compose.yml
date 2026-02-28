@@ -1,0 +1,10 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    container_name: rig-monday-sync
+    env_file: .env
+    restart: "no"
+    volumes:
+      - ./logs:/app/logs

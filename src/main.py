@@ -20,6 +20,7 @@ from src.core.monday.find_duplicate_items import (
     build_duplicate_resolution,
 )
 from src.core.monday.delete_monday_items import delete_monday_items
+from src.core.monday.find_orphan_items import find_monday_orphans
 
 def main() -> int:
     print("---------------------------------")
@@ -164,6 +165,33 @@ def main() -> int:
     if failed_deletions:
         print("Exemplo de falha:", failed_deletions[0])
 
+
+    # 15) Identificando órfãos no Monday
+    print("\n")
+    print("\n1️⃣5️⃣ Identificando órfãos no Monday...")
+    df_monday_orphans, orphan_item_ids_to_delete = find_monday_orphans(
+        df_rig_reference_id=df_rig_reference_id,
+        df_monday_all_items=df_monday_all_items,
+    )
+
+    print(df_monday_orphans)
+    print("Órfãos encontrados:", len(df_monday_orphans))
+    print("Exemplo ids órfãos a deletar:", orphan_item_ids_to_delete[:10])
+
+
+    # 16) Deletando órfãos no Monday
+    print("\n")
+    print("\n1️⃣6️⃣ Deletando órfãos no Monday...")
+    successful_orphan_deletions, failed_orphan_deletions = delete_monday_items(
+        item_ids_to_delete=orphan_item_ids_to_delete,
+        progress_description="🗑️ Deletando órfãos",
+        dry_run=False,
+    )
+
+    print(f"✅ Órfãos deletados: {len(successful_orphan_deletions)}")
+    print(f"❌ Falhas ao deletar órfãos: {len(failed_orphan_deletions)}")
+    if failed_orphan_deletions:
+        print("Exemplo de falha:", failed_orphan_deletions[0])
 
     print("\n🏁 Pipeline Rig concluído.\n")
     return 0
