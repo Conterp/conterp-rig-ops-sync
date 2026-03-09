@@ -6,14 +6,43 @@ from src.config.settings import MONDAY_COLS_JSON
 def to_number(value):
     """
     Converte para float quando possível.
+    Aceita strings com vírgula decimal (ex: "2,99").
     Retorna None para valores vazios/inválidos.
     """
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
+
+    if isinstance(value, str):
+        value = value.strip()
+        if value == "":
+            return None
+        # suporta decimal com vírgula
+        value = value.replace(".", "").replace(",", ".") if "," in value else value
+
     try:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def compute_status_sonda(row) -> str | None:
+    """
+    Regras (prioridade):
+    - Parada Programada > 0 => "Parada Programada"
+    - Parada Comercial > 0 => "Sem contrato"
+    - Eficiência > 0 => "Operando"
+    """
+    parada_prog = to_number(row.get("Parada Programada (Horas)")) or 0
+    parada_com = to_number(row.get("Parada Comercial (Horas)")) or 0
+    eficiencia = to_number(row.get("Eficiência (%)")) or 0
+
+    if parada_prog > 0:
+        return "Parada Programada"
+    if parada_com > 0:
+        return "Sem Contrato"
+    if eficiencia > 0:
+        return "Operando"
+    return None
 
 
 def build_monday_payloads(df_rig_operational_daily_valid: pd.DataFrame) -> list[dict]:
@@ -82,6 +111,12 @@ def build_monday_payloads(df_rig_operational_daily_valid: pd.DataFrame) -> list[
             MONDAY_COLS_JSON["parada_com"]: to_number(row.get("Parada Comercial (Horas)")),
             MONDAY_COLS_JSON["parada_prog"]: to_number(row.get("Parada Programada (Horas)")),
         }
+
+        # Status Sonda (opcional): só seta se existir no mapeamento e se houver status calculado
+        status_sonda = compute_status_sonda(row)
+        status_col_id = MONDAY_COLS_JSON.get("status_sonda")
+        if status_col_id and status_sonda is not None:
+            column_values[status_col_id] = {"label": status_sonda}
 
         column_values = {
             column_id: column_value
