@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import json
 
+from src.config.settings import MONDAY_GROUP_EFICIENCIA
 from src.config.settings import MONDAY_GROUP_FALTANTES
 
 from src.config.settings import check_required_envs
@@ -36,10 +37,24 @@ def main() -> int:
     print("1) Validando variáveis de ambiente...")
     check_required_envs()
 
-    # 2) Busca todos ID's que já existem no monday
+    # 2) Busca Todos ID's do Grupo Eficiência Monday
     print("\n")
-    print("\n2) Lendo todos ID's que existem no Monday...")
-    df_monday_ids = fetch_monday_ids(limit=500)
+    print("\n2) Lendo itens do Monday e filtrando IDs do grupo 'Eficiência'...")
+
+    df_monday_all_items_efficiency = fetch_monday_all_items(limit=500)
+
+    if "group_id" not in df_monday_all_items_efficiency.columns:
+        raise RuntimeError(
+            "fetch_monday_all_items não retornou 'group_id'. Verifique fetch_monday_all_items.py"
+        )
+
+    df_monday_eff_ids = df_monday_all_items_efficiency[
+        df_monday_all_items_efficiency["group_id"] == MONDAY_GROUP_EFICIENCIA
+    ].copy()
+
+    df_monday_ids = df_monday_eff_ids.rename(columns={"reference_id_monday": "Monday ID"})[["Monday ID"]]
+
+    print(f"Total IDs em Eficiência: {len(df_monday_ids)}")
     print(df_monday_ids)
 
     # 3) Autenticação no RigMgt
@@ -58,7 +73,7 @@ def main() -> int:
 
     # 5) Definindo datas para Query Params
     print("\n")
-    print("\n5) Definindo data atual...")
+    print("\n5) Definindo Data Atual...")
     START_DATE, END_DATE = print_date_range_from_start()
     print("START_DATE:", START_DATE)
     print("END_DATE:", END_DATE)
@@ -89,12 +104,12 @@ def main() -> int:
         end_date=END_DATE,
     )
 
-    print(df_missing.head(10))
-    print("Total faltantes:", len(df_missing))
+    print(df_missing)
+    print("Total Faltantes:", len(df_missing))
 
     # 8) Descobrindo novos reference_ids
     print("\n")
-    print("\n8) Descobrindo novos reference_ids...")
+    print("\n8) Descobrindo Novos reference_ids para Eficiência...")
     df_new_ids = find_new_reference_ids(
         df_monday_ids_existing=df_monday_ids,
         df_base=df_base,
@@ -131,13 +146,13 @@ def main() -> int:
     print("\n11) Preparando payloads para o Monday...")
     monday_payloads = build_monday_payloads(df_rig_operational_daily_valid)
 
-    print(f"Total para subir: {len(monday_payloads)}")
+    print(f"Total para subir (Eficiência): {len(monday_payloads)}")
     if monday_payloads:
         print(json.dumps(monday_payloads[0], indent=2))
         
-    # 12) Subindo itens no Monday
+    # 12) Subindo Novos Registros em 'Eficiência' no Monday
     print("\n")
-    print("\n12) Subindo itens no Monday...")
+    print("\n12) Subindo Novos Registros em 'Eficiência' no Monday")
     successful_creations, failed_creations = create_monday_items(monday_payloads)
 
     print(f"✅ Sucessos: {len(successful_creations)}")
@@ -148,13 +163,13 @@ def main() -> int:
 
     # 13) Recarregando itens do Monday
     print("\n")
-    print("\n13) Recarregando todos os itens do Monday...")
+    print("\n13)🔄 Recarregando todos os itens do Monday...")
     df_monday_all_items = fetch_monday_all_items(limit=500)
     print(df_monday_all_items)
     
-     # 14) Filtrando registros faltantes (evitar subir repetido no grupo Faltantes)
+    # 14) Filtrando registros faltantes (evitar subir repetido no grupo Faltantes)
     print("\n")
-    print("\n14) Filtrando registros faltantes já existentes no Monday (grupo Faltantes)...")
+    print("\n14)🧪 Filtrando Registros Faltantes")
 
     if "group_id" not in df_monday_all_items.columns:
         raise RuntimeError(
@@ -170,9 +185,39 @@ def main() -> int:
         df_monday_faltantes["reference_id_monday"].dropna().astype("string")
     )
 
-    print(f"Itens já no Monday: {len(existing_missing_ids)}")
+    print(f"Itens Faltantes já no Monday: {len(existing_missing_ids)}")
 
-    # df_missing tem reference_id (Nome - Data)
+    # 14.1) Deletando Órfãos de Datas Faltantes
+    print("\n")
+    print("\n14.1) 🗑️ Deletando Órfãos de Datas Faltantes")
+
+    expected_missing_ids = set(df_missing["reference_id"].dropna().astype("string")) if df_missing is not None else set()
+    current_missing_ids = set(df_monday_faltantes["reference_id_monday"].dropna().astype("string"))
+
+    ids_to_delete_noise = current_missing_ids - expected_missing_ids
+
+    df_noise = df_monday_faltantes[
+        df_monday_faltantes["reference_id_monday"].astype("string").isin(ids_to_delete_noise)
+    ].copy()
+
+    item_ids_to_delete_noise = df_noise["item_id"].astype("int64").tolist()
+
+    print(f"Itens 'lixo' a deletar em Datas Faltantes: {len(item_ids_to_delete_noise)}")
+    print("Exemplo ids:", item_ids_to_delete_noise[:10])
+
+    successful_noise_del, failed_noise_del = delete_monday_items(
+        item_ids_to_delete=item_ids_to_delete_noise,
+        progress_description="🧹 Limpando Datas Faltantes (lixo/manual)",
+        dry_run=False,
+    )
+
+    print(f"✅ Limpados (Faltantes): {len(successful_noise_del)}")
+    print(f"❌ Falhas ao limpar (Faltantes): {len(failed_noise_del)}")
+    if failed_noise_del:
+        print("Exemplo de falha:", failed_noise_del[0])
+
+    existing_missing_ids = current_missing_ids.intersection(expected_missing_ids)
+    
     if df_missing is None or df_missing.empty:
         df_missing_to_create = df_missing
     else:
@@ -180,13 +225,14 @@ def main() -> int:
             ~df_missing["reference_id"].astype("string").isin(existing_missing_ids)
         ].copy()
 
-    print(f"Faltantes NOVOS para criar: {0 if df_missing_to_create is None else len(df_missing_to_create)}")
+    print(f"Faltantes NOVOS para criar (pós-limpeza): {0 if df_missing_to_create is None else len(df_missing_to_create)}")
     if df_missing_to_create is not None and not df_missing_to_create.empty:
-        print(df_missing_to_create.head(10))
+        print(df_missing_to_create)
+    print(f"Itens válidos que permanecem em Datas Faltantes: {len(existing_missing_ids)}")
 
     # 15) Criando itens no Grupo 'Datas Faltantes'
     print("\n")
-    print("\n15) Criando itens no grupo 'Datas Faltantes'...")
+    print("\n15)💾 Criando itens no grupo 'Datas Faltantes'...")
 
     missing_payloads = build_missing_payloads(df_missing_to_create)
 
@@ -201,10 +247,44 @@ def main() -> int:
     if failed_missing:
         print("Exemplo de falha:", failed_missing[0])
         
-    # 16) Encontrando Duplicados
+    # 16) Removendo do grupo 'Datas Faltantes' os itens que já viraram válidos na API
     print("\n")
-    print("\n16) Encontrando Duplicados...")
-    df_monday_duplicates, df_duplicate_summary = find_monday_duplicates(df_monday_all_items)
+    print("\n16)🗑️ Removendo de “Datas Faltantes” os Registros que Agora têm Dados Válidos")
+
+    valid_rig_ids = set(df_rig_reference_id["reference_id"].dropna().astype("string"))
+
+    df_faltantes_to_remove = df_monday_faltantes[
+        df_monday_faltantes["reference_id_monday"].astype("string").isin(valid_rig_ids)
+    ].copy()
+
+    item_ids_to_remove_from_faltantes = df_faltantes_to_remove["item_id"].astype("int64").tolist()
+
+    print(f"Itens a remover do grupo Faltantes (viraram válidos): {len(item_ids_to_remove_from_faltantes)}")
+    print("Exemplo ids a remover:", item_ids_to_remove_from_faltantes[:10])
+
+    successful_rm_faltantes, failed_rm_faltantes = delete_monday_items(
+        item_ids_to_delete=item_ids_to_remove_from_faltantes,
+        progress_description="🗑️ Limpando Faltantes (viraram válidos)",
+        dry_run=False,
+    )
+
+    print(f"✅ Removidos do Faltantes: {len(successful_rm_faltantes)}")
+    print(f"❌ Falhas ao remover do Faltantes: {len(failed_rm_faltantes)}")
+    if failed_rm_faltantes:
+        print("Exemplo de falha:", failed_rm_faltantes[0])
+        
+    # 16.1) Recarregando Monday após limpeza do grupo Faltantes...
+    print("\n")
+    print("\n16.1)⏳ Recarregando Monday após limpeza do grupo Faltantes...")
+    df_monday_all_items = fetch_monday_all_items(limit=500)
+        
+        
+    # 17) Encontrando Duplicados de 'Eficiência' no Monday
+    print("\n")
+    print("\n17)👯 Encontrando Duplicados de 'Eficiência' no Monday...")
+    df_monday_eff = df_monday_all_items[df_monday_all_items["group_id"] == MONDAY_GROUP_EFICIENCIA].copy()
+    
+    df_monday_duplicates, df_duplicate_summary = find_monday_duplicates(df_monday_eff)
 
     df_duplicate_resolution, item_ids_to_delete = build_duplicate_resolution(
         df_monday_duplicates=df_monday_duplicates,
@@ -214,12 +294,12 @@ def main() -> int:
     print(f"\n {df_duplicate_summary}")
     print(f"\n {df_duplicate_resolution}")
     print("Itens a deletar:", len(item_ids_to_delete))
-    print("Exemplo ids a deletar:", item_ids_to_delete[:10])
+    print("Exemplo ids a deletar:", item_ids_to_delete[:2])
 
 
-    # 17) Deletando duplicados no Monday
+    # 18) Deletando duplicados de 'Eficiência' no Monday
     print("\n")
-    print("\n17) Deletando duplicados no Monday...")
+    print("\n18) Deletando duplicados de 'Eficiência' no Monday...")
     successful_deletions, failed_deletions = delete_monday_items(
         item_ids_to_delete=item_ids_to_delete,
         progress_description="🗑️ Deletando duplicados",
@@ -230,24 +310,46 @@ def main() -> int:
     print(f"❌ Falhas: {len(failed_deletions)}")
     if failed_deletions:
         print("Exemplo de falha:", failed_deletions[0])
-
-
-    # 18) Identificando órfãos no Monday
+        
+    # 18.1) Encontrando e deletando duplicados no grupo 'Datas Faltantes'...
     print("\n")
-    print("\n18) Identificando órfãos no Monday...")
+    print("\n18.1) Deletando Duplicados 'Datas Faltantes' no Monday...")
+
+    df_monday_faltantes_now = df_monday_all_items[df_monday_all_items["group_id"] == MONDAY_GROUP_FALTANTES].copy()
+
+    df_dup_falt, df_sum_falt = find_monday_duplicates(df_monday_faltantes_now)
+    df_res_falt, ids_del_falt = build_duplicate_resolution(df_dup_falt, df_sum_falt)
+
+    print("Duplicados em Faltantes:", len(ids_del_falt))
+    print("Exemplo ids:", ids_del_falt[:10])
+
+    successful_del_falt, failed_del_falt = delete_monday_items(
+        item_ids_to_delete=ids_del_falt,
+        progress_description="🗑️ Deletando duplicados (Faltantes)",
+        dry_run=False,
+    )
+
+    print(f"✅ Deletados (Faltantes): {len(successful_del_falt)}")
+    print(f"❌ Falhas (Faltantes): {len(failed_del_falt)}")
+
+
+    # 19) Identificando Órfãos de 'Eficiência' no Monday
+    print("\n")
+    print("\n19) Identificando Órfãos de 'Eficiência' no Monday")
+    df_monday_eff = df_monday_all_items[df_monday_all_items["group_id"] == MONDAY_GROUP_EFICIENCIA].copy()
     df_monday_orphans, orphan_item_ids_to_delete = find_monday_orphans(
         df_rig_reference_id=df_rig_reference_id,
-        df_monday_all_items=df_monday_all_items,
+        df_monday_all_items=df_monday_eff,
     )
 
     print(df_monday_orphans)
     print("Órfãos encontrados:", len(df_monday_orphans))
-    print("Exemplo ids órfãos a deletar:", orphan_item_ids_to_delete[:10])
+    print("Exemplo ids órfãos a deletar:", orphan_item_ids_to_delete[:2])
 
 
-    # 19) Deletando órfãos no Monday
+    # 20) Deletando Órfãos de Eficiência no Monday
     print("\n")
-    print("\n19) Deletando órfãos no Monday...")
+    print("\n20) Deletando Órfãos de Eficiência no Monday...")
     successful_orphan_deletions, failed_orphan_deletions = delete_monday_items(
         item_ids_to_delete=orphan_item_ids_to_delete,
         progress_description="🗑️ Deletando órfãos",
