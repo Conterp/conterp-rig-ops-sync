@@ -8,7 +8,8 @@ from src.config.settings import (
     MONDAY_BASE_URL,
     MONDAY_API_TOKEN,
     MONDAY_BOARD_ID,
-    MONDAY_GROUP_ID,
+    MONDAY_GROUP_EFICIENCIA,
+    MONDAY_GROUP_FALTANTES,
     MONDAY_TIMEOUT_S,
     MONDAY_MAX_RETRIES,
     MONDAY_BACKOFF_BASE,
@@ -86,6 +87,7 @@ def create_monday_item(
     session: requests.Session,
     item_name: str,
     column_values: dict,
+    group_id: str,
 ) -> str:
     """
     Cria um único item no Monday e retorna o item_id criado.
@@ -94,8 +96,8 @@ def create_monday_item(
         raise RuntimeError("MONDAY_API_TOKEN não definido no .env")
     if not MONDAY_BOARD_ID:
         raise RuntimeError("MONDAY_BOARD_ID não definido no .env")
-    if not MONDAY_GROUP_ID:
-        raise RuntimeError("MONDAY_GROUP_ID não definido no .env")
+    if not group_id:
+        raise RuntimeError("group_id vazio/ausente (verifique MONDAY_GROUP_EFICIENCIA/FALTANTES ou payload)")
 
     request_headers = {
         "Authorization": MONDAY_API_TOKEN,
@@ -104,7 +106,7 @@ def create_monday_item(
 
     graphql_variables = {
         "board_id": str(MONDAY_BOARD_ID),
-        "group_id": MONDAY_GROUP_ID,
+        "group_id": str(group_id),
         "item_name": item_name,
         "column_values": json.dumps(column_values, ensure_ascii=False),
     }
@@ -141,7 +143,7 @@ def create_monday_items(monday_payloads: list[dict]) -> tuple[list[dict], list[d
         monday_payloads:
             Lista no formato:
             [
-              {"item_name": "...", "column_values": {...}},
+              {"item_name": "...", "column_values": {...}, "group_id": "..."},
               ...
             ]
 
@@ -157,16 +159,23 @@ def create_monday_items(monday_payloads: list[dict]) -> tuple[list[dict], list[d
     if monday_payloads is None or len(monday_payloads) == 0:
         return successful_creations, failed_creations
 
+    if not MONDAY_GROUP_EFICIENCIA:
+        raise RuntimeError("MONDAY_GROUP_EFICIENCIA não definido no .env")
+
     with requests.Session() as session:
         for monday_payload in tqdm(monday_payloads, desc="⬆️ Subindo no Monday", unit="item"):
             item_name = monday_payload["item_name"]
             column_values = monday_payload["column_values"]
+
+            # group_id por item (se não vier, cai no grupo padrão Eficiência)
+            group_id = monday_payload.get("group_id") or MONDAY_GROUP_EFICIENCIA
 
             try:
                 created_item_id = create_monday_item(
                     session=session,
                     item_name=item_name,
                     column_values=column_values,
+                    group_id=group_id,
                 )
                 successful_creations.append(
                     {
@@ -189,6 +198,7 @@ def create_monday_items(monday_payloads: list[dict]) -> tuple[list[dict], list[d
 
 
 if __name__ == "__main__":
+    # exemplo: cai no grupo padrão (Eficiência) porque não passamos group_id
     example_payloads = [
         {
             "item_name": "teste - SPT 111 - 2026-02-25",
@@ -197,6 +207,7 @@ if __name__ == "__main__":
                 "color_mky2w7qv": {"label": "SPT 111"},
                 "numeric_mky2dcym": 100.0,
             },
+            # "group_id": MONDAY_GROUP_FALTANTES,  # descomente pra testar no grupo faltantes
         }
     ]
 

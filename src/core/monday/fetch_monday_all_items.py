@@ -26,7 +26,7 @@ query ($board_id: ID!, $limit: Int!, $cursor: String) {
   boards(ids: [$board_id]) {
     items_page(limit: $limit, cursor: $cursor) {
       cursor
-      items { id name }
+      items { id name group { id } }
     }
   }
 }
@@ -161,6 +161,7 @@ def fetch_monday_all_items(limit: int = 500) -> pd.DataFrame:
                         {
                             "item_id": monday_item.get("id"),
                             "reference_id_monday": monday_item.get("name"),
+                            "group_id": (monday_item.get("group") or {}).get("id"),
                         }
                     )
 
@@ -173,7 +174,7 @@ def fetch_monday_all_items(limit: int = 500) -> pd.DataFrame:
 
     df_monday_all_items = pd.DataFrame(
         collected_rows,
-        columns=["item_id", "reference_id_monday"],
+        columns=["item_id", "reference_id_monday", "group_id"],
     )
 
     return df_monday_all_items

@@ -36,7 +36,8 @@ MONDAY_SLEEP_BETWEEN: float = float(os.getenv("MONDAY_SLEEP_BETWEEN", "0.35"))
 # 🗂️ Boards / Groups
 # ===========================
 MONDAY_BOARD_ID: Optional[int] = int(os.getenv("MONDAY_BOARD_ID")) if os.getenv("MONDAY_BOARD_ID") else None
-MONDAY_GROUP_ID: str = os.getenv("MONDAY_GROUP_ID")
+MONDAY_GROUP_EFICIENCIA: str = os.getenv("MONDAY_GROUP_EFICIENCIA")
+MONDAY_GROUP_FALTANTES: str = os.getenv("MONDAY_GROUP_FALTANTES")
 
 # ===========================
 # 🧩 Monday Columns (JSON)
@@ -73,7 +74,7 @@ def _mask_token(token: Optional[str], head: int = 4, tail: int = 3) -> str:
         return "*" * len(token)
     return f"{token[:head]}...{token[-tail:]} (len={len(token)})"
 
-def _preview(text: Optional[str], n: int = 40) -> str:
+def _preview(text: Optional[str], n: int = 10) -> str:
     if not text:
         return "MISSING"
     text_str = str(text)
@@ -112,7 +113,8 @@ def check_required_envs() -> None:
             ("MONDAY_API_TOKEN", MONDAY_API_TOKEN),
             ("MONDAY_BASE_URL", MONDAY_BASE_URL),
             ("MONDAY_BOARD_ID", MONDAY_BOARD_ID),
-            ("MONDAY_GROUP_ID", MONDAY_GROUP_ID),
+            ("MONDAY_GROUP_EFICIENCIA", MONDAY_GROUP_EFICIENCIA),
+            ("MONDAY_GROUP_FALTANTES", MONDAY_GROUP_FALTANTES),
             ("MONDAY_COLS_JSON", MONDAY_COLS_JSON if MONDAY_COLS_JSON else None),
             ("PIPELINE_START_DATE", PIPELINE_START_DATE),
         ]
@@ -128,7 +130,7 @@ def check_required_envs() -> None:
     print(f"• Rig Retry: max={RIG_MAX_RETRIES}, base={RIG_BACKOFF_BASE}, cap={RIG_BACKOFF_CAP}")
     print(f"• Monday URL: {_preview(MONDAY_BASE_URL)} | Token: {_mask_token(MONDAY_API_TOKEN)} | Timeout: {MONDAY_TIMEOUT_S}s")
     print(f"• Monday Retry: max={MONDAY_MAX_RETRIES}, base={MONDAY_BACKOFF_BASE}, cap={MONDAY_BACKOFF_CAP}, sleep={MONDAY_SLEEP_BETWEEN}")
-    print(f"• Board: {_mask_id(MONDAY_BOARD_ID)} | Group: {MONDAY_GROUP_ID}")
+    print(f"• Board: {_mask_id(MONDAY_BOARD_ID)} | Group: {_preview(MONDAY_GROUP_EFICIENCIA)}, {_preview(MONDAY_GROUP_FALTANTES)}")
     print(f"• Monday Cols mapeadas: {len(MONDAY_COLS_JSON)}")
     print(f"• Pipeline TZ: {PIPELINE_TZ} | Start: {PIPELINE_START_DATE} | MaxDiasRange: {MAX_DIAS_POR_RANGE}")
 
