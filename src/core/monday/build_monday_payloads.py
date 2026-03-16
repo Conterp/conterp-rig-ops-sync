@@ -29,19 +29,33 @@ def compute_status_sonda(row) -> str | None:
     """
     Regras (prioridade):
     - Parada Programada > 0 => "Parada Programada"
-    - Parada Comercial > 0 => "Sem contrato"
-    - Eficiência > 0 => "Operando"
+    - Parada Comercial > 0 => "Sem Contrato"
+    - Se qualquer um destes > 0 => "Operando":
+        Eficiência (%), Horas Produtivas, Operação (Horas), DTM (Horas),
+        Gloss (Horas), Reparo (Horas), Outros (Horas), Stand By (Horas)
     """
     parada_prog = to_number(row.get("Parada Programada (Horas)")) or 0
     parada_com = to_number(row.get("Parada Comercial (Horas)")) or 0
-    eficiencia = to_number(row.get("Eficiência (%)")) or 0
 
     if parada_prog > 0:
         return "Parada Programada"
     if parada_com > 0:
         return "Sem Contrato"
-    if eficiencia > 0:
+
+    operando_fields = [
+        "Eficiência (%)",
+        "Horas Produtivas",
+        "Operação (Horas)",
+        "DTM (Horas)",
+        "Gloss (Horas)",
+        "Reparo (Horas)",
+        "Outros (Horas)",
+        "Stand By (Horas)",
+    ]
+
+    if any((to_number(row.get(col)) or 0) > 0 for col in operando_fields):
         return "Operando"
+
     return None
 
 
@@ -140,8 +154,8 @@ if __name__ == "__main__":
             "reference_id": ["SPT 111 - 2026-02-24"],
             "Data": ["2026-02-24"],
             "Nome da Sonda": ["SPT 111"],
-            "Eficiência (%)": [100],
-            "Horas Produtivas": [24],
+            "Eficiência (%)": [0],
+            "Horas Produtivas": [0],
             "Operação (Horas)": [24],
             "DTM (Horas)": [0],
             "Gloss (Horas)": [0],
