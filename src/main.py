@@ -30,7 +30,9 @@ from src.core.monday.find_orphan_items import find_monday_orphans
 from src.core.monday.summary.build_execution_summary import (
     build_df_execution_summary,
     build_df_reconciliation,
+    build_summary_payload,
 )
+from src.core.webhook.send_to_n8n import send_summary_to_n8n
 
 def main() -> int:
     pipeline_start_ts = time.time()
@@ -368,7 +370,7 @@ def main() -> int:
     if failed_orphan_deletions:
         print("Exemplo de falha:", failed_orphan_deletions[0])
 
-    # 21) Recarregando estado final do Monday para o resumo
+    # 21) Recarregando estado final do Monday para o resumo e a reconciliação
     print("\n")
     print("\n21) 🔄 Recarregando estado final do Monday...")
     df_monday_final = fetch_monday_all_items(limit=500)
@@ -408,7 +410,7 @@ def main() -> int:
     print(f"rows={len(df_summary)}")
     print(df_summary.to_string(index=False))
 
-    # 22.1) Reconciliação final do board
+    # 22.1) Reconciliação final usando o df_monday_final carregado na etapa 21
     print("\n")
     print("=" * 60)
     print("22.1) RECONCILIAÇÃO FINAL")
@@ -423,6 +425,19 @@ def main() -> int:
     print("df_reconciliation:")
     print(f"rows={len(df_reconciliation)}")
     print(df_reconciliation.to_string(index=False))
+
+    # 22.2) Enviando resumo para o n8n
+    print("\n")
+    print("=" * 60)
+    print("22.2) ENVIANDO RESUMO PARA O N8N")
+    print("=" * 60)
+
+    summary_payload = build_summary_payload(
+        df_execution_summary=df_summary,
+        df_reconciliation_summary=df_reconciliation,
+    )
+
+    send_summary_to_n8n(summary_payload)
 
     print("\n🏁 Pipeline Rig concluído.\n")
     return 0

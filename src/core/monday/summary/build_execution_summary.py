@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+import json
+from typing import Any, Dict, List
 
 import pandas as pd
 
@@ -280,3 +281,350 @@ def build_df_reconciliation(
             "DELTA",
         ],
     )
+
+
+def _df_to_records(
+    df: pd.DataFrame | None,
+) -> List[Dict[str, Any]]:
+    """
+    Converte um DataFrame em uma lista de dicionários segura para JSON.
+    """
+    if df is None or df.empty:
+        return []
+
+    df_safe = df.astype(object).where(
+        pd.notnull(df),
+        None,
+    )
+
+    return df_safe.to_dict(orient="records")
+
+
+def _to_number(value: Any) -> int:
+    """
+    Converte um valor em inteiro.
+
+    Valores vazios, como o campo de duração, retornam zero.
+    """
+    if value in (None, ""):
+        return 0
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _find_by_action(
+    records: List[Dict[str, Any]],
+    action: str,
+) -> Dict[str, Any]:
+    """
+    Localiza uma linha do resumo pelo nome da ação.
+    """
+    return next(
+        (
+            item
+            for item in records
+            if item.get("ACTION") == action
+        ),
+        {},
+    )
+
+
+def _find_by_destino(
+    records: List[Dict[str, Any]],
+    destino_key: str,
+) -> Dict[str, Any]:
+    """
+    Localiza uma linha da reconciliação pelo destino.
+    """
+    return next(
+        (
+            item
+            for item in records
+            if item.get("DESTINO_KEY") == destino_key
+        ),
+        {},
+    )
+
+
+def _get_action_metric(
+    records: List[Dict[str, Any]],
+    action: str,
+    metric: str,
+) -> int:
+    """
+    Retorna uma métrica PLANNED, SUCCESS ou ERROR de uma ação.
+    """
+    item = _find_by_action(
+        records,
+        action,
+    )
+
+    return _to_number(
+        item.get(metric)
+    )
+
+
+def _get_destino_metric(
+    records: List[Dict[str, Any]],
+    destino_key: str,
+    metric: str,
+) -> int:
+    """
+    Retorna uma métrica da reconciliação.
+    """
+    item = _find_by_destino(
+        records,
+        destino_key,
+    )
+
+    return _to_number(
+        item.get(metric)
+    )
+
+
+def build_summary_payload(
+    df_execution_summary: pd.DataFrame,
+    df_reconciliation_summary: pd.DataFrame,
+) -> Dict[str, Any]:
+    """
+    Monta o payload que será enviado ao webhook do n8n.
+
+    O n8n receberá:
+    - as tabelas completas do resumo;
+    - os indicadores individuais de cada ação;
+    - os totais da execução;
+    - a reconciliação final do board;
+    - indicadores de erro e divergência.
+    """
+
+    execution_summary = _df_to_records(
+        df_execution_summary
+    )
+
+    reconciliation_summary = _df_to_records(
+        df_reconciliation_summary
+    )
+
+    execution_rows = [
+        item
+        for item in execution_summary
+        if item.get("ACTION") != "PIPELINE DURATION"
+    ]
+
+    pipeline_duration = _find_by_action(
+        execution_summary,
+        "PIPELINE DURATION",
+    ).get("PLANNED", "")
+
+    return {
+        "pipeline": "rig_ops",
+
+        "execution_summary": execution_summary,
+        "reconciliation_summary": reconciliation_summary,
+
+        "create_efficiency_items_planned": _get_action_metric(
+            execution_summary,
+            "CREATE EFFICIENCY ITEMS",
+            "PLANNED",
+        ),
+        "create_efficiency_items_success": _get_action_metric(
+            execution_summary,
+            "CREATE EFFICIENCY ITEMS",
+            "SUCCESS",
+        ),
+        "create_efficiency_items_error": _get_action_metric(
+            execution_summary,
+            "CREATE EFFICIENCY ITEMS",
+            "ERROR",
+        ),
+
+        "create_missing_items_planned": _get_action_metric(
+            execution_summary,
+            "CREATE MISSING ITEMS",
+            "PLANNED",
+        ),
+        "create_missing_items_success": _get_action_metric(
+            execution_summary,
+            "CREATE MISSING ITEMS",
+            "SUCCESS",
+        ),
+        "create_missing_items_error": _get_action_metric(
+            execution_summary,
+            "CREATE MISSING ITEMS",
+            "ERROR",
+        ),
+
+        "delete_duplicates_planned": _get_action_metric(
+            execution_summary,
+            "DELETE DUPLICATES",
+            "PLANNED",
+        ),
+        "delete_duplicates_success": _get_action_metric(
+            execution_summary,
+            "DELETE DUPLICATES",
+            "SUCCESS",
+        ),
+        "delete_duplicates_error": _get_action_metric(
+            execution_summary,
+            "DELETE DUPLICATES",
+            "ERROR",
+        ),
+
+        "delete_orphans_planned": _get_action_metric(
+            execution_summary,
+            "DELETE ORPHANS",
+            "PLANNED",
+        ),
+        "delete_orphans_success": _get_action_metric(
+            execution_summary,
+            "DELETE ORPHANS",
+            "SUCCESS",
+        ),
+        "delete_orphans_error": _get_action_metric(
+            execution_summary,
+            "DELETE ORPHANS",
+            "ERROR",
+        ),
+
+        "remove_recovered_items_planned": _get_action_metric(
+            execution_summary,
+            "REMOVE RECOVERED ITEMS",
+            "PLANNED",
+        ),
+        "remove_recovered_items_success": _get_action_metric(
+            execution_summary,
+            "REMOVE RECOVERED ITEMS",
+            "SUCCESS",
+        ),
+        "remove_recovered_items_error": _get_action_metric(
+            execution_summary,
+            "REMOVE RECOVERED ITEMS",
+            "ERROR",
+        ),
+
+        "pipeline_duration": pipeline_duration,
+
+        "execution_total_planned": sum(
+            _to_number(item.get("PLANNED"))
+            for item in execution_rows
+        ),
+        "execution_total_success": sum(
+            _to_number(item.get("SUCCESS"))
+            for item in execution_rows
+        ),
+        "execution_total_error": sum(
+            _to_number(item.get("ERROR"))
+            for item in execution_rows
+        ),
+        "execution_has_error": any(
+            _to_number(item.get("ERROR")) > 0
+            for item in execution_rows
+        ),
+
+        "rig_ops_expected_rows": _get_destino_metric(
+            reconciliation_summary,
+            "RIG_OPS",
+            "EXPECTED_ROWS",
+        ),
+        "rig_ops_actual_rows": _get_destino_metric(
+            reconciliation_summary,
+            "RIG_OPS",
+            "ACTUAL_ROWS",
+        ),
+        "rig_ops_delta": _get_destino_metric(
+            reconciliation_summary,
+            "RIG_OPS",
+            "DELTA",
+        ),
+
+        "reconciliation_total_expected_rows": sum(
+            _to_number(item.get("EXPECTED_ROWS"))
+            for item in reconciliation_summary
+        ),
+        "reconciliation_total_actual_rows": sum(
+            _to_number(item.get("ACTUAL_ROWS"))
+            for item in reconciliation_summary
+        ),
+        "reconciliation_total_delta": sum(
+            _to_number(item.get("DELTA"))
+            for item in reconciliation_summary
+        ),
+        "reconciliation_has_divergence": any(
+            _to_number(item.get("DELTA")) != 0
+            for item in reconciliation_summary
+        ),
+    }
+
+if __name__ == "__main__":
+    from src.core.webhook.send_to_n8n import send_summary_to_n8n
+
+    df_summary_test = pd.DataFrame(
+        [
+            {
+                "STEP": 0,
+                "ACTION": "CREATE EFFICIENCY ITEMS",
+                "PLANNED": 2,
+                "SUCCESS": 2,
+                "ERROR": 0,
+            },
+            {
+                "STEP": 1,
+                "ACTION": "CREATE MISSING ITEMS",
+                "PLANNED": 10,
+                "SUCCESS": 10,
+                "ERROR": 0,
+            },
+            {
+                "STEP": 2,
+                "ACTION": "DELETE DUPLICATES",
+                "PLANNED": 0,
+                "SUCCESS": 0,
+                "ERROR": 0,
+            },
+            {
+                "STEP": 3,
+                "ACTION": "DELETE ORPHANS",
+                "PLANNED": 0,
+                "SUCCESS": 0,
+                "ERROR": 0,
+            },
+            {
+                "STEP": 4,
+                "ACTION": "REMOVE RECOVERED ITEMS",
+                "PLANNED": 0,
+                "SUCCESS": 0,
+                "ERROR": 0,
+            },
+            {
+                "STEP": 5,
+                "ACTION": "PIPELINE DURATION",
+                "PLANNED": "1m 39s",
+                "SUCCESS": "",
+                "ERROR": "",
+            },
+        ]
+    )
+
+    df_reconciliation_test = pd.DataFrame(
+        [
+            {
+                "DESTINO_KEY": "RIG_OPS",
+                "EXPECTED_ROWS": 5610,
+                "ACTUAL_ROWS": 5610,
+                "DELTA": 0,
+            }
+        ]
+    )
+
+    payload_test = build_summary_payload(
+        df_execution_summary=df_summary_test,
+        df_reconciliation_summary=df_reconciliation_test,
+    )
+
+    print("Payload de teste:")
+    print(json.dumps(payload_test, indent=2, ensure_ascii=False))
+
+    send_summary_to_n8n(payload_test)
