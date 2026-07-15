@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import json
+import time
 
 from src.config.settings import MONDAY_GROUP_EFICIENCIA
 from src.config.settings import MONDAY_GROUP_FALTANTES
@@ -26,8 +27,14 @@ from src.core.monday.find_duplicate_items import (
 )
 from src.core.monday.delete_monday_items import delete_monday_items
 from src.core.monday.find_orphan_items import find_monday_orphans
+from src.core.monday.summary.build_execution_summary import (
+    build_df_execution_summary,
+    build_df_reconciliation,
+)
 
 def main() -> int:
+    pipeline_start_ts = time.time()
+
     print("---------------------------------")
     print("\n🚀 Iniciando RIG PIPELINE...\n")
     print("---------------------------------")
@@ -360,6 +367,62 @@ def main() -> int:
     print(f"❌ Falhas ao deletar órfãos: {len(failed_orphan_deletions)}")
     if failed_orphan_deletions:
         print("Exemplo de falha:", failed_orphan_deletions[0])
+
+    # 21) Recarregando estado final do Monday para o resumo
+    print("\n")
+    print("\n21) 🔄 Recarregando estado final do Monday...")
+    df_monday_final = fetch_monday_all_items(limit=500)
+
+    # 22) Resumo final das ações
+    print("\n")
+    print("=" * 60)
+    print("22) RESUMO FINAL")
+    print("=" * 60)
+
+    df_summary = build_df_execution_summary(
+        pipeline_start_ts=pipeline_start_ts,
+        monday_payloads=monday_payloads,
+        successful_creations=successful_creations,
+        failed_creations=failed_creations,
+        missing_payloads=missing_payloads,
+        successful_missing=successful_missing,
+        failed_missing=failed_missing,
+        item_ids_to_delete=item_ids_to_delete,
+        successful_deletions=successful_deletions,
+        failed_deletions=failed_deletions,
+        ids_del_falt=ids_del_falt,
+        successful_del_falt=successful_del_falt,
+        failed_del_falt=failed_del_falt,
+        item_ids_to_delete_noise=item_ids_to_delete_noise,
+        successful_noise_del=successful_noise_del,
+        failed_noise_del=failed_noise_del,
+        orphan_item_ids_to_delete=orphan_item_ids_to_delete,
+        successful_orphan_deletions=successful_orphan_deletions,
+        failed_orphan_deletions=failed_orphan_deletions,
+        item_ids_to_remove_from_faltantes=item_ids_to_remove_from_faltantes,
+        successful_rm_faltantes=successful_rm_faltantes,
+        failed_rm_faltantes=failed_rm_faltantes,
+    )
+
+    print("df_summary:")
+    print(f"rows={len(df_summary)}")
+    print(df_summary.to_string(index=False))
+
+    # 22.1) Reconciliação final do board
+    print("\n")
+    print("=" * 60)
+    print("22.1) RECONCILIAÇÃO FINAL")
+    print("=" * 60)
+
+    df_reconciliation = build_df_reconciliation(
+        df_rig_reference_id=df_rig_reference_id,
+        df_missing=df_missing,
+        df_monday_final=df_monday_final,
+    )
+
+    print("df_reconciliation:")
+    print(f"rows={len(df_reconciliation)}")
+    print(df_reconciliation.to_string(index=False))
 
     print("\n🏁 Pipeline Rig concluído.\n")
     return 0
